@@ -92,12 +92,14 @@ bool PWM(uint8_t motor_id, uint32_t mPWM, uint8_t speed)
   ledcAttachPin(MOT1_PWM_A_PIN,md1_ch1);
   ledcWrite(md1_ch1, (speed * 255 )/100);
   md1_pwm = mPWM;
+  md1_speed = speed;
     break;
   case 2:
   ledcSetup(md2_ch1,mPWM,md2_res);
   ledcAttachPin(MOT2_PWM_A_PIN,md2_ch1);
   ledcWrite(md2_ch1, (speed * 255 )/100);
   md2_pwm = mPWM;
+  md2_speed = speed;
     break;
   default:
     break;
@@ -365,8 +367,8 @@ void DumpRegisters(void)
     Serial.printf("DOS.%02d.%02d\n", DO1_state, DO2_state);
     Serial.printf("MS1.%02d.%02d\n", ms1_pwm, ms1_pwm_duty); 
     Serial.printf("MS2.%02d.%02d\n", ms2_pwm, ms2_pwm_duty); 
-    Serial.printf("MD1.%02d.%02d\n", md1_pwm, md1_duty); 
-    Serial.printf("MD2.%02d.%02d\n", md2_pwm, md2_duty); 
+    Serial.printf("MD1.%02d.%02d\n", md1_pwm, md1_speed); 
+    Serial.printf("MD2.%02d.%02d\n", md2_pwm, md2_speed); 
     Serial.println();
     lastDumpTime = millis();
   }

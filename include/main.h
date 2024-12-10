@@ -18,13 +18,13 @@ uint8_t ms2_pwm_duty = 50;
 
 
 uint32_t md1_pwm = 250;
-uint32_t md1_duty = 250;
+uint32_t md1_speed = 250;
 uint32_t md1_res = 8;
 uint8_t  md1_ch1 = 2;
 uint8_t  md1_ch2 = 3;
 
 uint32_t md2_pwm = 1000;
-uint32_t md2_duty = 50;
+uint32_t md2_speed = 50;
 uint32_t md2_res = 8;
 uint8_t  md2_ch1 = 4;
 uint8_t  md2_ch2 = 5;
