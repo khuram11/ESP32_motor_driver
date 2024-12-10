@@ -23,7 +23,6 @@ SPIClass spi2(FSPI);
 
 // Registers
 uint16_t ina229_registers[20];
-uint32_t ad7124_registers[14];
 
 // Relays state
 bool DO1_state = false;
@@ -36,6 +35,8 @@ const uint8_t ADC_ReadOnlyRegs[] = {0x00, 0x02, 0x05, 0x06, 0x08};
 const uint8_t ADC_ReadRegsLen[] = {2, 1, 3, 3, 2, 1, 3, 3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3};
 const uint8_t ADC_totalRegs = 0x38;
 
+
+Ad7124 adc(AD7124_CS, 4000000);
 
 
 void setup()
@@ -107,36 +108,17 @@ bool PWM(uint8_t motor_id, uint32_t mPWM, uint8_t speed)
 
   return OKAY;
 }
-bool ADC_writeReg(uint8_t regAddress, uint32_t value, uint8_t numBytes)
+int ADC_writeReg(AD7124_regIDs id, uint32_t value)
 {
-  for (uint8_t i_reg : ADC_ReadOnlyRegs)
-  {
-    if (i_reg == regAddress)
-      return false;
-  }
-  digitalWrite(AD7124_CS, LOW);
-  uint8_t commandByte = (0 << 7) | (regAddress & 0x3F);
-  spi2.transfer(commandByte);
-  for (int8_t i = numBytes - 1; i >= 0; i--)
-  {
-    spi2.transfer((value >> (8 * i)) & 0xFF);
-  }
-  digitalWrite(AD7124_CS, HIGH);
-  return value == ADC_readReg(regAddress, numBytes);
+  adc.regs[id].value = value;
+  int ret = adc.writeRegister(id);
+  return ret;
 }
 
-uint32_t ADC_readReg(uint8_t regAddress, uint8_t numBytes)
+uint32_t ADC_readReg(AD7124_regIDs id)
 {
-  digitalWrite(AD7124_CS, LOW);
-  uint8_t commandByte = (1 << 7) | (regAddress & 0x3F);
-  spi2.transfer(commandByte);
-  uint32_t value = 0;
-  for (uint8_t i = 0; i < numBytes; i++)
-  {
-    value = (value << 8) | spi2.transfer(0x00);
-  }
-  digitalWrite(AD7124_CS, HIGH);
-  return value;
+  int ret = adc.readRegister(id);
+  return adc.regs[id].value;
 }
 
 // Parse and execute commands
@@ -158,7 +140,7 @@ bool processCommand(String command)
   }
   else if (command.startsWith("SET.ADC."))
   {
-    uint16_t RegAddr, RegVal;
+    uint32_t RegAddr, RegVal;
     int res = sscanf(command.c_str(), "SET.ADC.%u.%u", &RegAddr, &RegVal);
     if (2 != res)
     {
@@ -167,7 +149,7 @@ bool processCommand(String command)
     }
     Serial.println("Valid Command Received for Setting ADC Register");
     Serial.printf("Reg \t %d,\tVal \t %d\n", RegAddr, RegVal);
-    return ADC_writeReg(RegAddr, RegVal, ((RegVal / 256) + 1));
+    return ADC_writeReg((AD7124_regIDs)RegAddr, RegVal);
   }
   else if (command.startsWith("SET.DO"))
   {
@@ -296,6 +278,7 @@ void SetupPins(void)
 
   attachInterrupt(DI1_PIN, DI1_ISR, RISING);
   attachInterrupt(DI2_PIN, DI2_ISR, RISING);
+  adc.begin(spi2);
 
 }
 
@@ -356,9 +339,9 @@ void DumpRegisters(void)
     {
       Serial.printf("BAT.%02d.%d\n", i, BAT_ReadReg(i));
     }
-    for (int i = 0; i < ADC_totalRegs; i++)
+    for (int i ; i <=  Reg_REG_NO ; i++ )
     {
-      Serial.printf("ADC.%02d.%d\n", i, ADC_readReg(i, ADC_ReadRegsLen[i]));
+      Serial.printf("ADC.%02d.%d\n", i, ADC_readReg((AD7124_regIDs)i));
     }
     Serial.printf("DI1.%ld\n", pin1_pulses);
     Serial.printf("DI2.%ld\n", pin2_pulses);

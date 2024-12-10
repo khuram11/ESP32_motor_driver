@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include "define.h"
+#include <NHB_AD7124.h>
+
 
 uint32_t ms1_pwm = 250;
 uint8_t ms1_pwm_res = 8;
@@ -59,10 +61,10 @@ typedef enum
 void sendResponse(const char *response);
 uint16_t BAT_ReadReg(uint8_t RegAddr);
 bool BAT_WriteReg(const uint8_t reg, const uint16_t value);
-uint32_t ADC_readReg(uint8_t regAddress, uint8_t numBytes);
-bool ADC_writeReg(uint8_t regAddress, uint32_t value, uint8_t numBytes);
+uint32_t ADC_readReg(AD7124_regIDs id);
+int ADC_writeReg(AD7124_regIDs id, uint32_t value);
 bool setRelay(uint8_t relay, bool state);
-bool PWM(uint8_t motor_id, m_dir_t dir, uint8_t speed);
+bool PWM(uint8_t motor_id, uint32_t mPWM, uint8_t speed);
 bool processCommand(String command);
 void InitSerial(void);
 void SetupPins(void);
