@@ -2,6 +2,10 @@
 #define __DEFINE_H__
 
 
+
+
+
+
 // Constants
 // #ifdef ESP32_S2
 #define INA229_CS 10

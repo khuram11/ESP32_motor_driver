@@ -59,7 +59,7 @@ typedef enum
 
 
 void sendResponse(const char *response);
-uint16_t BAT_ReadReg(uint8_t RegAddr);
+uint32_t BAT_ReadReg(uint8_t regAddress, uint8_t regLength);
 bool BAT_WriteReg(const uint8_t reg, const uint16_t value);
 uint32_t ADC_readReg(AD7124_regIDs id);
 int ADC_writeReg(AD7124_regIDs id, uint32_t value);
@@ -71,6 +71,7 @@ void SetupPins(void);
 void ProcessSerialCommand(void);
 void DumpRegisters(void);
 void reset_pulses(void);
-
-
+void step2_sig(void);
+void step1_sig(void);
+void checkWifi(void);
 #endif //__MAIN_H__

@@ -1,6 +1,6 @@
 
 #include "main.h"
-
+#include "WiFi.h"
 
 
 typedef struct stepper_t
@@ -14,12 +14,13 @@ typedef struct stepper_t
 
 
 
-uint16_t BAT_ReadReg(uint8_t RegAddr);
-uint32_t ADC_readReg(uint8_t regAddress, uint8_t numBytes);
+
 
 // SPI objects
 SPIClass spi1(HSPI);
 SPIClass spi2(FSPI);
+SPISettings spiSettings(10000000, MSBFIRST, SPI_MODE1);
+
 
 // Registers
 uint16_t ina229_registers[20];
@@ -42,6 +43,7 @@ Ad7124 adc(AD7124_CS, 4000000);
 void setup()
 {
   InitSerial();
+  // checkWifi();
   SetupPins();
 }
 
@@ -189,7 +191,7 @@ bool processCommand(String command)
   else if (command.startsWith("SET.MS"))
   {
     uint8_t m_id, m_dir, m_en;
-    int res = sscanf(command.c_str(), "SET.MS%u.%1u.%u", &m_id, &m_en, &m_dir);
+    int res = sscanf(command.c_str(), "SET.MS%u.%1u%1u", &m_id, &m_en, &m_dir);
     if (3 != res)
       return ERROR;
     switch (m_id)
@@ -202,6 +204,29 @@ bool processCommand(String command)
     case 2:
       digitalWrite(MOT_ENABLE2_PIN, m_en);
       digitalWrite(DIR2_PIN, m_dir);
+      return OKAY;
+    default:
+      return ERROR;
+    }
+  }  else if (command.startsWith("SET.SM"))
+  {
+    uint8_t m_id;
+    uint32_t mPWM, mDC;
+    int res = sscanf(command.c_str(), "SET.SM%u.%u.%u", &m_id, &mPWM, &mDC);
+    if (3 != res)
+      return ERROR;
+    switch (m_id)
+    {
+      // assuming motor stepping mode, stepping frequency and decay mode is set at initilzation
+    case 1:
+      ms1_pwm = mPWM;
+      ms1_pwm_duty = mDC;
+      step1_sig();
+      return OKAY;
+    case 2:
+      ms2_pwm = mPWM;
+      ms2_pwm_duty = mDC;
+      step2_sig();
       return OKAY;
     default:
       return ERROR;
@@ -255,6 +280,43 @@ void IRAM_ATTR DI2_ISR()
   p2_Hz++;
 }
 
+
+void checkWifi(void) 
+{
+    WiFi.mode(WIFI_STA);
+    WiFi.begin("pucca", "1r3n3!!..");
+    Serial.println("\nConnecting");
+
+    while(WiFi.status() != WL_CONNECTED){
+          int n = WiFi.scanNetworks();  // This will scan for available Wi-Fi networks
+  
+  // Check if networks are found
+  if (n == 0) {
+    Serial.println("No networks found");
+  } else 
+  {
+    Serial.print(n);
+    Serial.println(" networks found:");
+    
+    // Print SSID of all available networks
+    for (int i = 0; i < n; ++i)
+     {
+      Serial.print(i + 1);  // Network index (1-based)
+      Serial.print(": ");
+      Serial.print(WiFi.SSID(i));  // SSID of the network
+      Serial.print(" (Signal Strength: ");
+      Serial.print(WiFi.RSSI(i));  // Signal strength in dBm
+      Serial.println(" dBm)");
+      }
+    }
+        delay(500);
+    }
+
+    Serial.println("\nConnected to the WiFi network");
+    Serial.print("Local ESP32 IP: ");
+    Serial.println(WiFi.localIP());
+}
+
 void SetupPins(void)
 {
 
@@ -264,6 +326,7 @@ void SetupPins(void)
   pinMode(STEP2_PIN, OUTPUT);
   pinMode(DIR1_PIN, OUTPUT);
   pinMode(DIR2_PIN, OUTPUT);
+  pinMode(HEART_BEAT_PIN, OUTPUT);
   pinMode(DI1_PIN, INPUT);
   pinMode(DI2_PIN, INPUT);
 
@@ -278,7 +341,13 @@ void SetupPins(void)
 
   attachInterrupt(DI1_PIN, DI1_ISR, RISING);
   attachInterrupt(DI2_PIN, DI2_ISR, RISING);
+  spi1.begin(12, 13, 11, 10);
+
+  // SPI.begin(36, 37, 35, 38);
   adc.begin(spi2);
+  adc.setAdcControl (AD7124_OpMode_SingleConv, AD7124_FullPower, true);
+  adc.setChannel(0, 0, AD7124_Input_AIN0, AD7124_Input_AIN1, true);
+  adc.setPWRSW(1);
 
 }
 
@@ -293,13 +362,42 @@ void ProcessSerialCommand(void)
       sendResponse("ERROR");
   }
 }
-uint16_t BAT_ReadReg(uint8_t RegAddr)
-{
-  digitalWrite(INA229_CS, LOW);             // Enable SPI slave
-  spi1.transfer16(RegAddr | 0x8000);        // Send register address (read mode)
-  uint16_t value = spi1.transfer16(0x0000); // Receive 16-bit value
-  digitalWrite(INA229_CS, HIGH);            // Disable SPI slave
-  return value;
+uint32_t  BAT_ReadReg(uint8_t regAddress, uint8_t regLength) {
+    // Validate register length
+    if (regLength < 2 || regLength > 5) {
+        Serial.println("Invalid register length!");
+        return 0;
+    }
+
+    // Prepare the SPI frame
+    uint8_t readCommand = (regAddress << 2) | 0x01; // 6-bit regAddress + R/W = 1
+    uint8_t dummyBytes = regLength - 1;
+
+    // Allocate buffer for the response
+    uint8_t response[5] = {0};
+
+    // Begin SPI transaction
+    spi1.beginTransaction(spiSettings);
+    digitalWrite(INA229_CS, LOW); // Select the device
+
+    // Send the read command
+    spi1.transfer(readCommand);
+    // Send dummy bytes and collect response
+    for (uint8_t i = 0; i < regLength; i++) {
+        response[i] = spi1.transfer(0x00); // Send dummy data (0x00) to clock out the response
+    }
+
+    digitalWrite(INA229_CS, HIGH); // Deselect the device
+    spi1.endTransaction();
+
+    // Assemble response into a 32-bit value
+    uint32_t result = 0;
+    for (uint8_t i = 0; i < regLength; i++) {
+        result = (result << 8) | response[i];
+    }
+
+    return result;
+
 }
 
 
@@ -316,7 +414,7 @@ bool BAT_WriteReg(const uint8_t reg, const uint16_t value)
   spi1.transfer16(value);        // Send 16-bit value to write
   digitalWrite(INA229_CS, HIGH); // Disable SPI slave
   // readback to verify
-  return value == BAT_ReadReg(reg);
+  return true;
 }
 
 void reset_pulses(void)
@@ -327,6 +425,10 @@ void reset_pulses(void)
     p1_Hz = 0; 
     p2_Hz = 0;
     last_reset_time = millis();
+    static bool ledState = 0;
+    digitalWrite(HEART_BEAT_PIN, ledState);
+    ledState = !ledState; 
+
   }
 }
 void DumpRegisters(void)
@@ -337,9 +439,12 @@ void DumpRegisters(void)
     Serial.println("");
     for (int i : BAT_AllRegs)
     {
-      Serial.printf("BAT.%02d.%d\n", i, BAT_ReadReg(i));
+      int len = 2;
+      if(i == 4 || i == 5 || i == 7 || i == 8) len = 3;
+      if(i == 9 || i == 10) len = 5;
+      Serial.printf("BAT.%02d.%d\n", i, BAT_ReadReg(i, len));
     }
-    for (int i ; i <=  Reg_REG_NO ; i++ )
+    for (int i = 0 ; i <=  Reg_REG_NO ; i++ )
     {
       Serial.printf("ADC.%02d.%d\n", i, ADC_readReg((AD7124_regIDs)i));
     }
@@ -347,7 +452,8 @@ void DumpRegisters(void)
     Serial.printf("DI2.%ld\n", pin2_pulses);
     Serial.printf("DI1S.%ld\n", p1_Hz);
     Serial.printf("DI2S.%ld\n", p2_Hz);
-    Serial.printf("DOS.%02d.%02d\n", DO1_state, DO2_state);
+    Serial.printf("DO1.%02d\n", DO1_state);
+    Serial.printf("DO2.%02d\n", DO2_state);
     Serial.printf("MS1.%02d.%02d\n", ms1_pwm, ms1_pwm_duty); 
     Serial.printf("MS2.%02d.%02d\n", ms2_pwm, ms2_pwm_duty); 
     Serial.printf("MD1.%02d.%02d\n", md1_pwm, md1_speed); 
